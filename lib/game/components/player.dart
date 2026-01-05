@@ -1,58 +1,54 @@
 import 'package:flame/components.dart';
-import 'package:flame/game.dart';
-import 'package:flame/input.dart';
+import 'package:flame/geometry.dart';
 import 'package:flame/sprite.dart';
+import 'package:testLast-runner-08/game_objects/obstacle.dart';
+import 'package:testLast-runner-08/game_objects/collectable.dart';
 
 /// The player character in the runner game.
-class Player extends SpriteAnimationComponent with HasGameRef, Collidable {
-  /// The player's current health or lives.
-  int _health = 3;
+class Player extends SpriteAnimationComponent with HasHitboxes, Collidable {
+  static const double _playerSpeed = 200.0;
+  static const double _jumpForce = 500.0;
+  static const double _maxHealth = 100.0;
 
-  /// The player's current score.
-  int _score = 0;
-
-  /// The player's current animation state.
-  PlayerState _state = PlayerState.idle;
+  double _health = _maxHealth;
+  double _invulnerabilityTimer = 0.0;
+  bool _isInvulnerable = false;
 
   /// Constructs a new [Player] instance.
-  Player({
-    required Vector2 position,
-    required Vector2 size,
-  }) : super(
+  Player(Vector2 position)
+      : super(
           position: position,
-          size: size,
-        );
-
-  @override
-  Future<void> onLoad() async {
-    await super.onLoad();
-
-    // Load the player's sprite animation
-    animation = await gameRef.loadSpriteAnimation(
-      'player.png',
-      SpriteAnimationData.sequenced(
-        amount: 4,
-        stepTime: 0.15,
-        textureSize: Vector2.all(32),
-      ),
-    );
+          size: Vector2.all(50.0),
+          animation: SpriteAnimation.fromFrameData(
+            Sprite('player.png'),
+            SpriteAnimationData.sequenced(
+              amount: 4,
+              stepTime: 0.1,
+              textureSize: Vector2.all(50.0),
+            ),
+          ),
+        ) {
+    addHitbox(Rect.fromLTWH(0, 0, 40, 50));
   }
 
   @override
   void update(double dt) {
     super.update(dt);
 
-    // Update the player's position and animation based on input
-    switch (_state) {
-      case PlayerState.idle:
-        // Handle idle state
-        break;
-      case PlayerState.moving:
-        // Handle moving state
-        break;
-      case PlayerState.jumping:
-        // Handle jumping state
-        break;
+    // Handle player movement
+    if (isPressed(LogicalKeyboardKey.space)) {
+      velocity.y = -_jumpForce;
+    } else {
+      velocity.y += 1200 * dt;
+    }
+    velocity.x = _playerSpeed;
+
+    // Handle invulnerability frames
+    if (_isInvulnerable) {
+      _invulnerabilityTimer -= dt;
+      if (_invulnerabilityTimer <= 0) {
+        _isInvulnerable = false;
+      }
     }
   }
 
@@ -60,40 +56,26 @@ class Player extends SpriteAnimationComponent with HasGameRef, Collidable {
   void onCollision(Set<Vector2> intersectionPoints, Collidable other) {
     super.onCollision(intersectionPoints, other);
 
-    // Handle collisions with obstacles
+    // Handle collisions with obstacles and collectibles
     if (other is Obstacle) {
-      _health--;
-      if (_health <= 0) {
-        // Player has died, handle game over
-      }
+      _takeDamage(20.0);
+    } else if (other is Collectable) {
+      other.collect();
     }
   }
 
-  /// Handles input events for the player.
-  void handleInput(TapDownInfo event) {
-    // Handle player input, such as jumping
-    switch (_state) {
-      case PlayerState.idle:
-        _state = PlayerState.jumping;
-        break;
-      case PlayerState.moving:
-        // Handle other player actions
-        break;
-      case PlayerState.jumping:
-        // Handle jumping input
-        break;
+  /// Damages the player and applies invulnerability frames.
+  void _takeDamage(double amount) {
+    if (!_isInvulnerable) {
+      _health = (_health - amount).clamp(0, _maxHealth);
+      _isInvulnerable = true;
+      _invulnerabilityTimer = 1.0;
     }
   }
 
-  /// Increases the player's score.
-  void increaseScore(int points) {
-    _score += points;
-  }
-}
+  /// Returns the player's current health.
+  double get health => _health;
 
-/// Represents the different states the player can be in.
-enum PlayerState {
-  idle,
-  moving,
-  jumping,
+  /// Returns whether the player is currently invulnerable.
+  bool get isInvulnerable => _isInvulnerable;
 }

@@ -1,22 +1,16 @@
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
-import 'package:testLast-runner-08/components/player.dart';
-import 'package:testLast-runner-08/components/obstacle.dart';
-import 'package:testLast-runner-08/components/collectible.dart';
-import 'package:testLast-runner-08/services/analytics.dart';
-import 'package:testLast-runner-08/services/ads.dart';
-import 'package:testLast-runner-08/services/storage.dart';
+import 'package:testLast-runner-08/analytics_service.dart';
+import 'package:testLast-runner-08/game_controller.dart';
+import 'package:testLast-runner-08/level_config.dart';
+import 'package:testLast-runner-08/player.dart';
+import 'package:testLast-runner-08/obstacle.dart';
+import 'package:testLast-runner-08/coin.dart';
 
-/// The main game class for the 'testLast-runner-08' game.
+/// The main FlameGame class for the 'testLast-runner-08' game.
 class testLast-runner-08Game extends FlameGame with TapDetector {
   /// The current game state.
   GameState _gameState = GameState.playing;
-
-  /// The current level being played.
-  int _currentLevel = 1;
-
-  /// The player's score.
-  int _score = 0;
 
   /// The player character.
   late Player _player;
@@ -24,133 +18,137 @@ class testLast-runner-08Game extends FlameGame with TapDetector {
   /// The list of obstacles in the current level.
   final List<Obstacle> _obstacles = [];
 
-  /// The list of collectibles in the current level.
-  final List<Collectible> _collectibles = [];
+  /// The list of coins in the current level.
+  final List<Coin> _coins = [];
 
-  /// The analytics service.
-  final AnalyticsService _analyticsService = AnalyticsService();
+  /// The current score.
+  int _score = 0;
 
-  /// The ads service.
-  final AdsService _adsService = AdsService();
+  /// The number of lives the player has.
+  int _lives = 3;
 
-  /// The storage service.
-  final StorageService _storageService = StorageService();
+  /// The GameController instance.
+  late GameController _gameController;
 
+  /// The AnalyticsService instance.
+  late AnalyticsService _analyticsService;
+
+  /// Initializes the game.
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    _loadLevel(_currentLevel);
+
+    // Set up the camera and world
+    camera.viewport = FixedResolutionViewport(Vector2(720, 1280));
+    camera.followComponent(_player);
+
+    // Load the level configuration
+    await _loadLevel(1);
+
+    // Initialize the GameController and AnalyticsService
+    _gameController = GameController(this);
+    _analyticsService = AnalyticsService();
   }
 
-  /// Loads the specified level.
-  void _loadLevel(int level) {
-    // Load level data from storage or other source
-    // Create player, obstacles, and collectibles
-    _player = Player();
-    _obstacles.addAll(_createObstacles());
-    _collectibles.addAll(_createCollectibles());
+  /// Loads a level from the configuration.
+  Future<void> _loadLevel(int levelNumber) async {
+    // Load the level configuration
+    final levelConfig = await LevelConfig.load(levelNumber);
 
-    // Add components to the game world
+    // Create the player
+    _player = Player(levelConfig.playerStartPosition);
     add(_player);
-    _obstacles.forEach(add);
-    _collectibles.forEach(add);
 
-    // Reset game state
-    _gameState = GameState.playing;
-    _score = 0;
+    // Create the obstacles
+    _obstacles.clear();
+    for (final obstacleConfig in levelConfig.obstacles) {
+      final obstacle = Obstacle(obstacleConfig.position, obstacleConfig.size);
+      _obstacles.add(obstacle);
+      add(obstacle);
+    }
 
-    // Log level start event
-    _analyticsService.logLevelStart(level);
+    // Create the coins
+    _coins.clear();
+    for (final coinConfig in levelConfig.coins) {
+      final coin = Coin(coinConfig.position);
+      _coins.add(coin);
+      add(coin);
+    }
   }
 
+  /// Handles the game logic.
   @override
   void update(double dt) {
     super.update(dt);
 
-    // Update game components
-    _player.update(dt);
-    _obstacles.forEach((obstacle) => obstacle.update(dt));
-    _collectibles.forEach((collectible) => collectible.update(dt));
-
-    // Check for collisions
-    _checkCollisions();
-
-    // Check for level completion
-    if (_isLevelComplete()) {
-      _gameState = GameState.levelComplete;
-      _analyticsService.logLevelComplete(_currentLevel, _score);
-      // Unlock next level or show ad prompt
-    }
-
-    // Check for game over
-    if (_isGameOver()) {
-      _gameState = GameState.gameOver;
-      _analyticsService.logLevelFail(_currentLevel, _score);
-      // Show game over UI and prompt for retry or ad
+    switch (_gameState) {
+      case GameState.playing:
+        _updatePlaying(dt);
+        break;
+      case GameState.paused:
+        // Handle paused state
+        break;
+      case GameState.gameOver:
+        // Handle game over state
+        break;
+      case GameState.levelComplete:
+        // Handle level complete state
+        break;
     }
   }
 
+  /// Updates the game state when the player is playing.
+  void _updatePlaying(double dt) {
+    // Update the player
+    _player.update(dt);
+
+    // Check for collisions with obstacles
+    for (final obstacle in _obstacles) {
+      if (_player.isColliding(obstacle)) {
+        _handlePlayerHit();
+      }
+    }
+
+    // Check for collisions with coins
+    for (final coin in _coins) {
+      if (_player.isColliding(coin)) {
+        _collectCoin(coin);
+      }
+    }
+
+    // Update the score
+    _updateScore(dt);
+  }
+
+  /// Handles the player being hit by an obstacle.
+  void _handlePlayerHit() {
+    _lives--;
+    if (_lives <= 0) {
+      _gameState = GameState.gameOver;
+      _analyticsService.logEvent('level_fail');
+    } else {
+      // Reset the player's position and continue the game
+    }
+  }
+
+  /// Collects a coin and updates the score.
+  void _collectCoin(Coin coin) {
+    _score += coin.value;
+    _coins.remove(coin);
+    remove(coin);
+    _analyticsService.logEvent('coin_collected');
+  }
+
+  /// Updates the score based on the game time.
+  void _updateScore(double dt) {
+    _score += (dt * 10).toInt();
+  }
+
+  /// Handles a tap input.
   @override
   void onTapDown(TapDownInfo info) {
     super.onTapDown(info);
-    if (_gameState == GameState.playing) {
-      _player.jump();
-    }
-  }
-
-  /// Checks for collisions between the player, obstacles, and collectibles.
-  void _checkCollisions() {
-    // Check player collision with obstacles
-    for (final obstacle in _obstacles) {
-      if (_player.isColliding(obstacle)) {
-        _gameState = GameState.gameOver;
-        _analyticsService.logLevelFail(_currentLevel, _score);
-        // Handle game over logic
-        return;
-      }
-    }
-
-    // Check player collision with collectibles
-    for (final collectible in _collectibles) {
-      if (_player.isColliding(collectible)) {
-        _collectibles.remove(collectible);
-        _score += collectible.value;
-        _analyticsService.logCollectibleCollected(collectible.value);
-        // Handle collectible collection logic
-      }
-    }
-  }
-
-  /// Checks if the current level is complete.
-  bool _isLevelComplete() {
-    // Implement level completion logic based on your game design
-    return _obstacles.isEmpty && _collectibles.isEmpty;
-  }
-
-  /// Checks if the game is over.
-  bool _isGameOver() {
-    // Implement game over logic based on your game design
-    return _gameState == GameState.gameOver;
-  }
-
-  /// Creates the obstacles for the current level.
-  List<Obstacle> _createObstacles() {
-    // Implement obstacle creation logic based on your game design
-    return [
-      Obstacle(),
-      Obstacle(),
-      Obstacle(),
-    ];
-  }
-
-  /// Creates the collectibles for the current level.
-  List<Collectible> _createCollectibles() {
-    // Implement collectible creation logic based on your game design
-    return [
-      Collectible(),
-      Collectible(),
-      Collectible(),
-    ];
+    _gameController.handleTap();
   }
 }
 

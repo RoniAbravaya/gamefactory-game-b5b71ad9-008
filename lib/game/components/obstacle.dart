@@ -1,44 +1,44 @@
 import 'package:flame/components.dart';
-import 'package:flame/geometry.dart';
-import 'package:flame/sprite.dart';
-import 'package:testLast-runner-08/player.dart';
+import 'package:flame/collisions.dart';
+import 'package:flutter/material.dart';
 
-/// Represents an obstacle in the runner game.
-class Obstacle extends PositionComponent with Hitbox, Collidable {
-  final Sprite _sprite;
-  final double _speed;
+class Obstacle extends PositionComponent with CollisionCallbacks {
+  final double moveSpeed;
+  final Vector2 direction;
 
-  /// Creates a new instance of the Obstacle component.
   Obstacle({
     required Vector2 position,
-    required this._sprite,
-    required this._speed,
-  }) : super(position: position, size: _sprite.originalSize) {
-    addShape(HitboxRectangle());
+    required Vector2 size,
+    this.moveSpeed = 150,
+    this.direction = const Vector2(0, 1),
+  }) : super(
+          position: position,
+          size: size,
+          anchor: Anchor.center,
+        );
+
+  @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+    add(RectangleHitbox());
   }
 
   @override
   void update(double dt) {
     super.update(dt);
-    position.x -= _speed * dt;
-
-    // Respawn the obstacle if it goes off-screen
-    if (position.x < -size.x) {
-      position.x = size.x + 500;
-    }
-  }
-
-  @override
-  void onCollision(Set<Vector2> intersectionPoints, Collidable other) {
-    super.onCollision(intersectionPoints, other);
-    if (other is Player) {
-      other.takeDamage();
+    position += direction * moveSpeed * dt;
+    
+    if (position.y > 900 || position.y < -100 ||
+        position.x > 500 || position.x < -100) {
+      removeFromParent();
     }
   }
 
   @override
   void render(Canvas canvas) {
-    super.render(canvas);
-    _sprite.render(canvas, position: position, size: size);
+    canvas.drawRect(
+      size.toRect(),
+      Paint()..color = Colors.red,
+    );
   }
 }
